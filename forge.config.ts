@@ -1,0 +1,97 @@
+import type { ForgeConfig } from '@electron-forge/shared-types';
+import { MakerSquirrel } from '@electron-forge/maker-squirrel';
+import { MakerZIP } from '@electron-forge/maker-zip';
+import { MakerDeb } from '@electron-forge/maker-deb';
+import { MakerRpm } from '@electron-forge/maker-rpm';
+import { WebpackPlugin } from '@electron-forge/plugin-webpack';
+import { FusesPlugin } from '@electron-forge/plugin-fuses';
+import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import * as path from 'path';
+import * as fs from 'fs';
+
+import { mainConfig } from './webpack.main.config';
+import { rendererConfig } from './webpack.renderer.config';
+
+const config: ForgeConfig = {
+  packagerConfig: {
+    asar: false,
+  },
+  hooks: {
+    postPackage: async (_config, result) => {
+      const appDir = path.join(result.outputPaths[0], 'resources', 'app');
+      const srcDir = path.join(__dirname, 'node_modules', 'node-pty');
+      const destDir = path.join(appDir, 'node_modules', 'node-pty');
+
+      console.log(`Copying node-pty to ${destDir}`);
+
+      function copyDirSync(src: string, dest: string) {
+        fs.mkdirSync(dest, { recursive: true });
+        for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+          const srcPath = path.join(src, entry.name);
+          const destPath = path.join(dest, entry.name);
+          if (entry.isDirectory()) {
+            copyDirSync(srcPath, destPath);
+          } else {
+            fs.copyFileSync(srcPath, destPath);
+          }
+        }
+      }
+
+      copyDirSync(srcDir, destDir);
+      console.log('node-pty copied successfully');
+    },
+  },
+  // node-pty ships N-API prebuilds that work under Electron; rebuilding from
+  // source needs Python and the VS C++ toolchain, which most machines lack.
+  rebuildConfig: { onlyModules: [] },
+  makers: [
+    new MakerSquirrel({}),
+    new MakerZIP({}, ['darwin']),
+    new MakerRpm({}),
+    new MakerDeb({}),
+  ],
+  plugins: [
+    new WebpackPlugin({
+      mainConfig,
+      devServer: {
+        // Suppress the harmless ResizeObserver loop error from the error overlay
+        client: {
+          overlay: {
+            runtimeErrors: (error: Error) => {
+              if (error.message === 'ResizeObserver loop completed with undelivered notifications.') {
+                return false;
+              }
+              return true;
+            },
+          },
+        },
+      },
+      renderer: {
+        config: rendererConfig,
+        entryPoints: [
+          {
+            html: './src/renderer/index.html',
+            js: './src/renderer/index.tsx',
+            name: 'main_window',
+            preload: {
+              js: './src/preload/preload.ts',
+            },
+          },
+        ],
+      },
+    }),
+    // Fuses are used to enable/disable various Electron functionality
+    // at package time, before code signing the application
+    new FusesPlugin({
+      version: FuseVersion.V1,
+      [FuseV1Options.RunAsNode]: false,
+      [FuseV1Options.EnableCookieEncryption]: true,
+      [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+      [FuseV1Options.EnableNodeCliInspectArguments]: false,
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
+      [FuseV1Options.OnlyLoadAppFromAsar]: false,
+    }),
+  ],
+};
+
+export default config;
