@@ -100,4 +100,4 @@ src/shared/     types and IPC channel names shared by both sides
 
 Electron 41 · React 19 · TypeScript 5 · Monaco · Milkdown (Crepe) · xterm.js with WebGL · node-pty · chokidar · Vitest
 
-MIT licence.
+MIT licence. Licences of the packages it builds on are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); regenerate with `npm run notices` after changing dependencies.
